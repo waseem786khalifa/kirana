@@ -1,0 +1,6 @@
+{
+  "name": "Kirana Saarthi",
+  "description": "Customer Ordering & Home Delivery System for Kirana Merchants",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
