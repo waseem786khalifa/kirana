@@ -1,0 +1,10 @@
+Options -Indexes
+RewriteEngine On
+
+# Preserve Bearer tokens on Apache/FastCGI configurations that otherwise strip Authorization.
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [QSA,L]
