@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:kirana_core/kirana_core.dart';
 
+import 'customer_ui.dart';
 import 'customer_controller.dart';
 import 'screens/home_shell.dart';
 import 'screens/onboarding_page.dart';
@@ -30,48 +31,142 @@ class _KiranaCustomerAppState extends State<KiranaCustomerApp> {
 
   @override
   Widget build(BuildContext context) {
-    const Color seed = Color(0xFF176B45);
-    final ThemeData baseTheme = KiranaTheme.light(seed: seed);
-    final ColorScheme colors = baseTheme.colorScheme;
+    final ThemeData baseTheme = KiranaTheme.light(
+      seed: CustomerPalette.primary,
+    );
+    final TextTheme textTheme = baseTheme.textTheme.apply(
+      bodyColor: CustomerPalette.textPrimary,
+      displayColor: CustomerPalette.textPrimary,
+    );
 
     return MaterialApp(
       title: 'Kirana Saarthi',
       debugShowCheckedModeBanner: false,
       theme: baseTheme.copyWith(
-        scaffoldBackgroundColor: const Color(0xFFF7F6F1),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: colors.surface,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide(color: colors.outlineVariant),
+        scaffoldBackgroundColor: CustomerPalette.background,
+        colorScheme: baseTheme.colorScheme.copyWith(
+          primary: CustomerPalette.primary,
+          onPrimary: Colors.white,
+          primaryContainer: CustomerPalette.primaryLight,
+          onPrimaryContainer: CustomerPalette.primaryDark,
+          surface: CustomerPalette.surface,
+          onSurface: CustomerPalette.textPrimary,
+          outline: CustomerPalette.border,
+          outlineVariant: CustomerPalette.border,
+          error: CustomerPalette.danger,
+        ),
+        textTheme: textTheme.copyWith(
+          headlineSmall: textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.45,
           ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide(color: colors.outlineVariant),
+          titleLarge: textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.3,
+          ),
+          titleMedium: textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+          bodyMedium: textTheme.bodyMedium?.copyWith(height: 1.35),
+        ),
+        appBarTheme: const AppBarTheme(
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          centerTitle: false,
+          backgroundColor: CustomerPalette.background,
+          foregroundColor: CustomerPalette.textPrimary,
+          surfaceTintColor: Colors.transparent,
+          titleTextStyle: TextStyle(
+            color: CustomerPalette.textPrimary,
+            fontSize: 19,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.35,
           ),
         ),
-        cardTheme: CardThemeData(
-          color: colors.surface,
+        inputDecorationTheme: const InputDecorationTheme(
+          filled: true,
+          fillColor: CustomerPalette.surface,
+          hintStyle: TextStyle(
+            color: CustomerPalette.textSecondary,
+            fontSize: 13,
+          ),
+          labelStyle: TextStyle(color: CustomerPalette.textSecondary),
+          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(13)),
+            borderSide: BorderSide(color: CustomerPalette.border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(13)),
+            borderSide: BorderSide(color: CustomerPalette.border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.all(Radius.circular(13)),
+            borderSide: BorderSide(color: CustomerPalette.primary, width: 1.4),
+          ),
+        ),
+        cardTheme: const CardThemeData(
+          color: CustomerPalette.surface,
           elevation: 0,
           margin: EdgeInsets.zero,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: BorderSide(color: colors.outlineVariant),
+            borderRadius: BorderRadius.all(Radius.circular(14)),
+            side: BorderSide(color: CustomerPalette.border),
           ),
         ),
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
             minimumSize: const Size(48, 52),
+            backgroundColor: CustomerPalette.primary,
+            foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(12),
             ),
             textStyle: const TextStyle(fontWeight: FontWeight.w700),
           ),
         ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: CustomerPalette.primaryDark,
+            side: const BorderSide(color: CustomerPalette.border),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(11),
+            ),
+          ),
+        ),
+        dividerTheme: const DividerThemeData(
+          color: CustomerPalette.border,
+          thickness: 1,
+          space: 1,
+        ),
+        navigationBarTheme: NavigationBarThemeData(
+          height: 70,
+          elevation: 0,
+          backgroundColor: CustomerPalette.surface,
+          indicatorColor: CustomerPalette.primaryLight,
+          surfaceTintColor: Colors.transparent,
+          labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>((states) {
+            final bool selected = states.contains(WidgetState.selected);
+            return TextStyle(
+              color: selected
+                  ? CustomerPalette.primaryDark
+                  : CustomerPalette.textPrimary,
+              fontSize: 10,
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+            );
+          }),
+          iconTheme: WidgetStateProperty.resolveWith<IconThemeData>((states) {
+            final bool selected = states.contains(WidgetState.selected);
+            return IconThemeData(
+              color: selected
+                  ? CustomerPalette.primary
+                  : CustomerPalette.textPrimary,
+              size: 23,
+            );
+          }),
+        ),
       ),
-      darkTheme: KiranaTheme.dark(seed: seed),
-      themeMode: ThemeMode.system,
+      themeMode: ThemeMode.light,
       home: AnimatedBuilder(
         animation: widget.controller,
         builder: (BuildContext context, Widget? child) {
@@ -101,7 +196,10 @@ class _LaunchScreen extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: <Color>[Color(0xFF0F5132), Color(0xFF1C7A50)],
+            colors: <Color>[
+              CustomerPalette.primaryDark,
+              CustomerPalette.primary,
+            ],
           ),
         ),
         child: Center(

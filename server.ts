@@ -22,8 +22,50 @@ import {
 
 const app = express();
 const PORT = 3000;
+const PHP_API_TARGET = process.env.KIRANA_PHP_API_URL || 'http://127.0.0.1/kirana_api/public';
+
+app.disable('x-powered-by');
+app.set('trust proxy', process.env.TRUST_PROXY === 'true');
+app.use((_request, response, next) => {
+  response.setHeader('X-Content-Type-Options', 'nosniff');
+  response.setHeader('X-Frame-Options', 'DENY');
+  response.setHeader('Referrer-Policy', 'no-referrer');
+  response.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; img-src 'self' data: https: http:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+  );
+  next();
+});
 
 app.use(express.json());
+
+// The admin dashboard always talks to the persistent PHP/MySQL backend. Keeping
+// this proxy server-side avoids browser CORS differences in local and deployed builds.
+app.use('/admin-api', async (request, response) => {
+  try {
+    const target = `${PHP_API_TARGET.replace(/\/$/, '')}${request.originalUrl.replace(/^\/admin-api/, '') || '/'}`;
+    const headers: Record<string, string> = { accept: 'application/json' };
+    if (request.headers.authorization) headers.authorization = request.headers.authorization;
+    if (request.headers['content-type']) headers['content-type'] = String(request.headers['content-type']);
+    if (request.headers['user-agent']) headers['user-agent'] = String(request.headers['user-agent']);
+    if (request.headers['x-request-id']) headers['x-request-id'] = String(request.headers['x-request-id']);
+    headers['x-forwarded-for'] = request.ip || request.socket.remoteAddress || '';
+    const upstream = await fetch(target, {
+      method: request.method,
+      headers,
+      body: ['GET', 'HEAD'].includes(request.method) ? undefined : JSON.stringify(request.body ?? {}),
+    });
+    response.status(upstream.status);
+    for (const header of ['content-type', 'cache-control', 'x-content-type-options', 'x-frame-options', 'referrer-policy', 'x-request-id']) {
+      const value = upstream.headers.get(header);
+      if (value) response.setHeader(header, value);
+    }
+    response.removeHeader('ETag');
+    response.send(Buffer.from(await upstream.arrayBuffer()));
+  } catch {
+    response.status(502).json({ error: { code: 'BACKEND_UNAVAILABLE', message: 'PHP backend is unavailable.' } });
+  }
+});
 
 // In-Memory Database State
 let stores: KiranaStore[] = [...INITIAL_STORES];

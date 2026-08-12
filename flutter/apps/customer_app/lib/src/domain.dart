@@ -33,6 +33,16 @@ class CustomerStore {
     required this.expectedDeliveryTime,
     required this.codEnabled,
     required this.upiEnabled,
+    this.phone = '',
+    this.logoUrl = '',
+    this.bannerUrl = '',
+    this.description = '',
+    this.openingTime = '',
+    this.closingTime = '',
+    this.categories = const <String>[],
+    this.productCount = 0,
+    this.maxSaving = 0,
+    this.maxDiscountPercent = 0,
   });
 
   final int id;
@@ -47,6 +57,16 @@ class CustomerStore {
   final String expectedDeliveryTime;
   final bool codEnabled;
   final bool upiEnabled;
+  final String phone;
+  final String logoUrl;
+  final String bannerUrl;
+  final String description;
+  final String openingTime;
+  final String closingTime;
+  final List<String> categories;
+  final int productCount;
+  final double maxSaving;
+  final int maxDiscountPercent;
 }
 
 class CustomerProduct {

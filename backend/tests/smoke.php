@@ -43,6 +43,8 @@ check($health['json']['data']['database'] === 'ok', 'database connection is heal
 
 $stores = request_json($baseUrl . '/stores?limit=2');
 check($stores['status'] === 200 && isset($stores['json']['data'][0]['delivery_settings']), 'stores use the documented envelope');
+check(isset($stores['json']['data'][0]['categories']) && is_array($stores['json']['data'][0]['categories']), 'stores include dynamic catalog categories');
+check(isset($stores['json']['data'][0]['product_count']) && isset($stores['json']['data'][0]['max_saving']), 'stores include catalog summary values');
 
 $products = request_json($baseUrl . '/products?store_id=1&limit=2');
 check($products['status'] === 200 && isset($products['json']['data'][0]['selling_price']), 'products are snake_case');
@@ -56,5 +58,11 @@ $badLogin = request_json($baseUrl . '/delivery-staff/login', 'POST', array(
     'pin' => '0000',
 ));
 check($badLogin['status'] === 401 && !isset($badLogin['json']['data']), 'invalid rider PIN is rejected without credential exposure');
+
+$adminAnonymous = request_json($baseUrl . '/admin/overview');
+check(
+    $adminAnonymous['status'] === 401 && $adminAnonymous['json']['error']['code'] === 'UNAUTHORIZED',
+    'admin routes reject anonymous requests'
+);
 
 echo 'Smoke checks completed.' . PHP_EOL;

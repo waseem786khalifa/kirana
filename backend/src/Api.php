@@ -42,6 +42,11 @@ function store_resource(array $row): array
         )
     );
 
+    $categories = array();
+    if (isset($row['catalog_categories']) && trim((string) $row['catalog_categories']) !== '') {
+        $categories = array_values(array_filter(array_map('trim', explode('||', (string) $row['catalog_categories']))));
+    }
+
     return array(
         'id' => $row['id'],
         'code' => $row['code'],
@@ -73,7 +78,22 @@ function store_resource(array $row): array
             'online_udhaar_enabled' => $row['online_udhaar_enabled'],
         ),
         'allow_nearby_discovery' => $row['allow_nearby_discovery'],
+        'categories' => $categories,
+        'product_count' => isset($row['product_count']) ? (int) $row['product_count'] : 0,
+        'max_saving' => isset($row['max_saving']) ? (float) $row['max_saving'] : 0.0,
+        'max_discount_percent' => isset($row['max_discount_percent']) ? (int) $row['max_discount_percent'] : 0,
     );
+}
+
+function store_catalog_summary_sql(string $storeAlias = 's'): string
+{
+    return ' LEFT JOIN (' .
+        'SELECT store_id, COUNT(*) AS product_count, ' .
+        "GROUP_CONCAT(DISTINCT category ORDER BY category SEPARATOR '||') AS catalog_categories, " .
+        'MAX(GREATEST(mrp - selling_price, 0)) AS max_saving, ' .
+        'MAX(CASE WHEN mrp > 0 THEN ROUND(GREATEST(mrp - selling_price, 0) * 100 / mrp) ELSE 0 END) AS max_discount_percent ' .
+        'FROM products WHERE available_for_online = 1 AND is_hidden = 0 GROUP BY store_id' .
+        ') catalog ON catalog.store_id = ' . $storeAlias . '.id';
 }
 
 function product_resource(array $row): array
@@ -156,7 +176,7 @@ function api_list_stores(): void
     $where = array();
     $params = array();
     if (isset($_GET['pincode']) && $_GET['pincode'] !== '') {
-        $where[] = 'pincode = ?';
+        $where[] = 's.pincode = ?';
         $params[] = validate_pincode((string) $_GET['pincode']);
     }
     if (isset($_GET['nearby']) && $_GET['nearby'] !== '') {
@@ -164,15 +184,19 @@ function api_list_stores(): void
         if ($nearby === null) {
             validation_error(array('nearby' => array('Must be a boolean.')));
         }
-        $where[] = 'allow_nearby_discovery = ?';
+        $where[] = 's.allow_nearby_discovery = ?';
         $params[] = $nearby ? 1 : 0;
     }
 
-    $sql = 'SELECT * FROM stores';
+    $sql = 'SELECT s.*, COALESCE(catalog.product_count, 0) AS product_count, ' .
+        "COALESCE(catalog.catalog_categories, '') AS catalog_categories, " .
+        'COALESCE(catalog.max_saving, 0) AS max_saving, ' .
+        'COALESCE(catalog.max_discount_percent, 0) AS max_discount_percent FROM stores s' .
+        store_catalog_summary_sql('s');
     if ($where !== array()) {
         $sql .= ' WHERE ' . implode(' AND ', $where);
     }
-    $sql .= ' ORDER BY name LIMIT ' . $page['limit'] . ' OFFSET ' . $page['offset'];
+    $sql .= ' ORDER BY s.name LIMIT ' . $page['limit'] . ' OFFSET ' . $page['offset'];
     $statement = db()->prepare($sql);
     $statement->execute($params);
     $data = array_map('store_resource', $statement->fetchAll());
@@ -185,7 +209,13 @@ function api_store_by_code(string $code): void
     if (!preg_match('/^[A-Z0-9_-]{3,32}$/', $code)) {
         validation_error(array('code' => array('Use 3-32 letters, digits, underscores, or hyphens.')));
     }
-    $statement = db()->prepare('SELECT * FROM stores WHERE code = ? LIMIT 1');
+    $statement = db()->prepare(
+        'SELECT s.*, COALESCE(catalog.product_count, 0) AS product_count, ' .
+        "COALESCE(catalog.catalog_categories, '') AS catalog_categories, " .
+        'COALESCE(catalog.max_saving, 0) AS max_saving, ' .
+        'COALESCE(catalog.max_discount_percent, 0) AS max_discount_percent FROM stores s' .
+        store_catalog_summary_sql('s') . ' WHERE s.code = ? LIMIT 1'
+    );
     $statement->execute(array($code));
     $store = $statement->fetch();
     if (!$store) {
@@ -517,38 +547,41 @@ function api_delivery_staff_login(): void
         $sql .= ' AND store_id = ?';
         $params[] = required_int($body, 'store_id');
     }
-    $statement = db()->prepare($sql);
-    $statement->execute($params);
-    $matches = array();
-    foreach ($statement->fetchAll() as $candidate) {
-        if ((bool) $candidate['is_active'] && password_verify($pin, $candidate['pin_hash'])) {
-            $matches[] = $candidate;
-        }
-    }
-    if ($matches === array()) {
-        throw new ApiException(401, 'UNAUTHORIZED', 'Invalid mobile or PIN.');
-    }
-    if (count($matches) > 1) {
-        validation_error(array('store_id' => array('Store ID is required when this mobile belongs to multiple stores.')));
-    }
-    $staff = $matches[0];
-
     $rawToken = bin2hex(random_bytes(32));
     $tokenHash = hash('sha256', $rawToken);
-    $expiresAt = date('Y-m-d H:i:s', time() + app_config()['token_ttl_seconds']);
-    in_transaction(function (PDO $pdo) use ($staff, $tokenHash, $expiresAt): void {
+    $tokenTtl = (int) app_config()['token_ttl_seconds'];
+    $result = in_transaction(function (PDO $pdo) use ($sql, $params, $pin, $tokenHash, $tokenTtl): array {
+        $statement = $pdo->prepare($sql . ' ORDER BY id FOR UPDATE');
+        $statement->execute($params);
+        $matches = array();
+        foreach ($statement->fetchAll() as $candidate) {
+            if ((bool) $candidate['is_active'] && password_verify($pin, $candidate['pin_hash'])) {
+                $matches[] = $candidate;
+            }
+        }
+        if ($matches === array()) {
+            throw new ApiException(401, 'UNAUTHORIZED', 'Invalid mobile or PIN.');
+        }
+        if (count($matches) > 1) {
+            validation_error(array('store_id' => array('Store ID is required when this mobile belongs to multiple stores.')));
+        }
+        $staff = $matches[0];
+        $expiresAt = (string) $pdo->query(
+            'SELECT DATE_ADD(NOW(), INTERVAL ' . $tokenTtl . ' SECOND)'
+        )->fetchColumn();
         $pdo->prepare('DELETE FROM api_tokens WHERE expires_at <= NOW()')->execute();
         $statement = $pdo->prepare(
             'INSERT INTO api_tokens (delivery_staff_id, token_hash, expires_at) VALUES (?, ?, ?)'
         );
         $statement->execute(array($staff['id'], $tokenHash, $expiresAt));
+        return array('staff' => $staff, 'expires_at' => $expiresAt);
     });
 
     respond_data(array(
         'token' => $rawToken,
         'token_type' => 'Bearer',
-        'expires_at' => date(DATE_ATOM, strtotime($expiresAt)),
-        'staff' => delivery_staff_resource($staff),
+        'expires_at' => date(DATE_ATOM, strtotime($result['expires_at'])),
+        'staff' => delivery_staff_resource($result['staff']),
     ));
 }
 
@@ -1029,14 +1062,25 @@ function api_create_order(): void
     respond_data(order_resource(db(), $result['order']), $result['existing'] ? 200 : 201);
 }
 
-function api_update_order_status(int $id): void
+function update_order_status(
+    int $id,
+    array $body,
+    bool $requireRiderAuthorization = true,
+    ?callable $afterUpdate = null
+): array
 {
-    $body = json_body();
     reject_unknown_fields($body, array('status', 'rejection_reason', 'delivery_staff_id'));
     $targetStatus = enum_value($body, 'status', ORDER_STATUSES);
     $rejectionReason = optional_string($body, 'rejection_reason', 500, null);
 
-    $order = in_transaction(function (PDO $pdo) use ($id, $body, $targetStatus, $rejectionReason): array {
+    return in_transaction(function (PDO $pdo) use (
+        $id,
+        $body,
+        $targetStatus,
+        $rejectionReason,
+        $requireRiderAuthorization,
+        $afterUpdate
+    ): array {
         $order = fetch_order($pdo, $id, true);
         $currentStatus = $order['status'];
         $transitions = array(
@@ -1085,7 +1129,7 @@ function api_update_order_status(int $id): void
             validation_error(array('rejection_reason' => array('A cancellation reason is required.')));
         }
 
-        if (in_array($targetStatus, array('OUT_FOR_DELIVERY', 'DELIVERED'), true)) {
+        if ($requireRiderAuthorization && in_array($targetStatus, array('OUT_FOR_DELIVERY', 'DELIVERED'), true)) {
             if ($newStaffId === null) {
                 validation_error(array('delivery_staff_id' => array('An assigned rider is required.')));
             }
@@ -1188,10 +1232,17 @@ function api_update_order_status(int $id): void
             'INSERT INTO order_status_history (order_id, from_status, to_status, delivery_staff_id, note) VALUES (?, ?, ?, ?, ?)'
         );
         $statement->execute(array($id, $currentStatus, $targetStatus, $newStaffId, $historyNote));
-        return fetch_order($pdo, $id);
+        $updated = fetch_order($pdo, $id);
+        if ($afterUpdate !== null) {
+            $afterUpdate($pdo, $order, $updated);
+        }
+        return $updated;
     });
+}
 
-    respond_data(order_resource(db(), $order));
+function api_update_order_status(int $id): void
+{
+    respond_data(order_resource(db(), update_order_status($id, json_body())));
 }
 
 function valid_report_date(string $value, string $field): string

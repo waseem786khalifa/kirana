@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../customer_controller.dart';
+import '../customer_ui.dart';
 import '../domain.dart';
 
 class CartPage extends StatelessWidget {
@@ -26,20 +27,29 @@ class CartPage extends StatelessWidget {
         Expanded(
           child: ListView(
             key: const PageStorageKey<String>('cart-scroll'),
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 18),
             children: <Widget>[
-              if (controller.amountUntilMinimum > 0)
-                _MinimumOrderCard(controller: controller)
-              else
-                _DeliveryMessage(controller: controller),
+              _DeliveryProgress(controller: controller),
+              if (_checkoutBlocker(controller)
+                  case final String message) ...<Widget>[
+                const SizedBox(height: 10),
+                _CheckoutBlocker(message: message),
+              ],
               const SizedBox(height: 12),
-              ...controller.cartLines.map(
-                (CartLine line) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _CartLineCard(controller: controller, line: line),
+              Card(
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: List<Widget>.generate(
+                    controller.cartLines.length * 2 - 1,
+                    (int index) {
+                      if (index.isOdd) return const Divider();
+                      final CartLine line = controller.cartLines[index ~/ 2];
+                      return _CartLine(controller: controller, line: line);
+                    },
+                  ),
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 12),
               _BillCard(controller: controller),
             ],
           ),
@@ -47,26 +57,39 @@ class CartPage extends StatelessWidget {
         SafeArea(
           top: false,
           child: Container(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              border: Border(
-                top: BorderSide(
-                  color: Theme.of(context).colorScheme.outlineVariant,
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 11),
+            decoration: const BoxDecoration(
+              color: CustomerPalette.surface,
+              border: Border(top: BorderSide(color: CustomerPalette.border)),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x08000000),
+                  blurRadius: 12,
+                  offset: Offset(0, -3),
                 ),
-              ),
+              ],
             ),
             child: Row(
               children: <Widget>[
-                Expanded(
+                SizedBox(
+                  width: 104,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      const Text('Total', style: TextStyle(fontSize: 12)),
+                      const Text(
+                        'Total',
+                        style: TextStyle(
+                          color: CustomerPalette.textSecondary,
+                          fontSize: 11,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
                       Text(
                         formatRupees(controller.total),
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        style: const TextStyle(
+                          fontSize: 19,
+                          height: 1.1,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -74,12 +97,13 @@ class CartPage extends StatelessWidget {
                   ),
                 ),
                 Expanded(
-                  flex: 2,
-                  child: FilledButton.icon(
+                  child: CustomerPrimaryButton(
                     key: const Key('proceed-checkout'),
+                    label: controller.amountUntilMinimum > 0
+                        ? 'Add ${formatRupees(controller.amountUntilMinimum)} more'
+                        : 'Checkout',
+                    icon: Icons.arrow_forward_rounded,
                     onPressed: controller.canCheckout ? onCheckout : null,
-                    icon: const Icon(Icons.arrow_forward_rounded),
-                    label: const Text('Checkout'),
                   ),
                 ),
               ],
@@ -91,8 +115,162 @@ class CartPage extends StatelessWidget {
   }
 }
 
-class _CartLineCard extends StatelessWidget {
-  const _CartLineCard({required this.controller, required this.line});
+String? _checkoutBlocker(CustomerController controller) {
+  final CustomerStore store = controller.selectedStore!;
+  if (!store.isOpen) {
+    return 'Dukaan abhi band hai. Store open hone par checkout kar sakte hain.';
+  }
+  if (!store.deliveryAvailable) {
+    return 'Is store par home delivery abhi available nahi hai.';
+  }
+  if (!store.codEnabled && !store.upiEnabled) {
+    return 'Store ne abhi koi online order payment method enable nahi kiya hai.';
+  }
+  return null;
+}
+
+class _CheckoutBlocker extends StatelessWidget {
+  const _CheckoutBlocker({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: CustomerPalette.promoCream,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Icon(Icons.info_outline_rounded, size: 19),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(fontSize: 11.5, height: 1.35),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DeliveryProgress extends StatelessWidget {
+  const _DeliveryProgress({required this.controller});
+
+  final CustomerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final CustomerStore store = controller.selectedStore!;
+    final bool minimumMet = controller.amountUntilMinimum == 0;
+    final bool freeDelivery = controller.deliveryCharge == 0 && minimumMet;
+    final double threshold = minimumMet
+        ? store.freeDeliveryAbove
+        : store.minimumOrder;
+    final double progress = threshold <= 0
+        ? 1
+        : (controller.subtotal / threshold).clamp(0, 1);
+    final double remaining = minimumMet
+        ? (store.freeDeliveryAbove - controller.subtotal).clamp(
+            0,
+            double.infinity,
+          )
+        : controller.amountUntilMinimum;
+    final String headline = freeDelivery
+        ? 'Yay! Free delivery unlocked'
+        : minimumMet
+        ? 'Add ${formatRupees(remaining)} for free delivery'
+        : 'Add ${formatRupees(remaining)} to place order';
+    final String caption = freeDelivery
+        ? store.deliveryCharge > 0
+              ? 'You saved ${formatRupees(store.deliveryCharge)} on delivery'
+              : 'No delivery fee on this order'
+        : minimumMet
+        ? 'Free delivery above ${formatRupees(store.freeDeliveryAbove)}'
+        : 'Minimum order is ${formatRupees(store.minimumOrder)}';
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 12, 11),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: <Color>[Color(0xFFF1F9EC), Color(0xFFE8F6E7)],
+        ),
+        borderRadius: BorderRadius.circular(13),
+      ),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 44,
+            height: 44,
+            decoration: const BoxDecoration(
+              color: CustomerPalette.primaryLight,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              freeDelivery
+                  ? Icons.local_offer_rounded
+                  : Icons.shopping_bag_outlined,
+              color: CustomerPalette.primary,
+              size: 23,
+            ),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  headline,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: CustomerPalette.primaryDark,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  caption,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: CustomerPalette.textSecondary,
+                    fontSize: 10,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: LinearProgressIndicator(
+                    minHeight: 4,
+                    value: progress,
+                    backgroundColor: Colors.white,
+                    color: CustomerPalette.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 9),
+          const Icon(
+            Icons.delivery_dining_rounded,
+            color: CustomerPalette.primaryDark,
+            size: 39,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CartLine extends StatelessWidget {
+  const _CartLine({required this.controller, required this.line});
 
   final CustomerController controller;
   final CartLine line;
@@ -100,171 +278,60 @@ class _CartLineCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final CustomerProduct product = line.product;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: <Widget>[
-            Container(
-              width: 70,
-              height: 70,
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerLowest,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: product.imageUrl.isEmpty
-                  ? const Icon(Icons.inventory_2_outlined)
-                  : Image.network(
-                      product.imageUrl,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) =>
-                          const Icon(Icons.inventory_2_outlined),
-                    ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    product.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    product.packSize,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    formatRupees(line.total),
-                    style: const TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  IconButton(
-                    tooltip: line.quantity == 1
-                        ? 'Cart se hatayein'
-                        : 'Quantity kam karein',
-                    onPressed: () =>
-                        controller.setQuantity(product, line.quantity - 1),
-                    icon: Icon(
-                      line.quantity == 1
-                          ? Icons.delete_outline_rounded
-                          : Icons.remove_rounded,
-                    ),
-                  ),
-                  Text(
-                    '${line.quantity}',
-                    style: const TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                  IconButton(
-                    tooltip: line.quantity < product.stock
-                        ? 'Quantity badhayein'
-                        : 'Maximum available stock',
-                    onPressed: line.quantity < product.stock
-                        ? () =>
-                              controller.setQuantity(product, line.quantity + 1)
-                        : null,
-                    icon: const Icon(Icons.add_rounded),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MinimumOrderCard extends StatelessWidget {
-  const _MinimumOrderCard({required this.controller});
-
-  final CustomerController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final double minimum = controller.selectedStore!.minimumOrder;
-    final double progress = minimum <= 0
-        ? 1
-        : (controller.subtotal / minimum).clamp(0, 1);
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            '${formatRupees(controller.amountUntilMinimum)} aur add karein to order place hoga',
-            style: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 9),
-          LinearProgressIndicator(value: progress),
-          const SizedBox(height: 5),
-          Text('Minimum order: ${formatRupees(minimum)}'),
-        ],
-      ),
-    );
-  }
-}
-
-class _DeliveryMessage extends StatelessWidget {
-  const _DeliveryMessage({required this.controller});
-
-  final CustomerController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final CustomerStore store = controller.selectedStore!;
-    final bool free = controller.deliveryCharge == 0;
-    String text;
-    if (!store.isOpen) {
-      text = 'Dukaan band hai; checkout filhaal available nahi hai.';
-    } else if (!store.deliveryAvailable) {
-      text = 'Home delivery filhaal available nahi hai.';
-    } else if (free) {
-      text = 'Yay! Is order par delivery FREE hai.';
-    } else {
-      final double remaining = (store.freeDeliveryAbove - controller.subtotal)
-          .clamp(0, double.infinity);
-      text =
-          '${formatRupees(remaining)} aur add karein aur FREE delivery paayein.';
-    }
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: free
-            ? const Color(0xFFE1F5E9)
-            : Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(18),
-      ),
+    return Padding(
+      padding: const EdgeInsets.all(12),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
-          Icon(
-            free ? Icons.local_shipping_rounded : Icons.info_outline_rounded,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(fontWeight: FontWeight.w700),
+          SizedBox(
+            width: 67,
+            height: 76,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(9),
+              child: CustomerProductImage(product: product),
             ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  product.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    height: 1.2,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  product.packSize,
+                  style: const TextStyle(
+                    color: CustomerPalette.textSecondary,
+                    fontSize: 10.5,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  formatRupees(line.total),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          CustomerQuantityControl(
+            quantity: line.quantity,
+            max: product.stock,
+            onChanged: (int value) => controller.setQuantity(product, value),
+            compact: true,
+            deleteAtOne: true,
           ),
         ],
       ),
@@ -279,17 +346,16 @@ class _BillCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final CustomerStore store = controller.selectedStore!;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(
+            const Text(
               'Bill details',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 14),
             _BillRow(
@@ -300,7 +366,7 @@ class _BillCard extends StatelessWidget {
               _BillRow(
                 label: 'Product savings',
                 value: '-${formatRupees(controller.discount)}',
-                valueColor: const Color(0xFF147447),
+                valueColor: CustomerPalette.primaryDark,
               ),
             _BillRow(
               label: 'Item subtotal',
@@ -311,11 +377,18 @@ class _BillCard extends StatelessWidget {
               value: controller.deliveryCharge == 0
                   ? 'FREE'
                   : formatRupees(controller.deliveryCharge),
+              oldValue:
+                  controller.deliveryCharge == 0 && store.deliveryCharge > 0
+                  ? formatRupees(store.deliveryCharge)
+                  : null,
               valueColor: controller.deliveryCharge == 0
-                  ? const Color(0xFF147447)
+                  ? CustomerPalette.primaryDark
                   : null,
             ),
-            const Divider(height: 24),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Divider(),
+            ),
             _BillRow(
               label: 'To pay',
               value: formatRupees(controller.total),
@@ -332,32 +405,45 @@ class _BillRow extends StatelessWidget {
   const _BillRow({
     required this.label,
     required this.value,
+    this.oldValue,
     this.valueColor,
     this.emphasize = false,
   });
 
   final String label;
   final String value;
+  final String? oldValue;
   final Color? valueColor;
   final bool emphasize;
 
   @override
   Widget build(BuildContext context) {
-    final TextStyle? style = emphasize
-        ? Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)
-        : Theme.of(context).textTheme.bodyMedium;
+    final TextStyle style = TextStyle(
+      color: CustomerPalette.textPrimary,
+      fontSize: emphasize ? 15 : 12,
+      fontWeight: emphasize ? FontWeight.w900 : FontWeight.w500,
+    );
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: <Widget>[
           Expanded(child: Text(label, style: style)),
+          if (oldValue != null) ...<Widget>[
+            Text(
+              oldValue!,
+              style: const TextStyle(
+                color: CustomerPalette.textMuted,
+                fontSize: 10,
+                decoration: TextDecoration.lineThrough,
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
           Text(
             value,
-            style: style?.copyWith(
+            style: style.copyWith(
               color: valueColor,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w900,
             ),
           ),
         ],
@@ -379,28 +465,38 @@ class _EmptyCart extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            CircleAvatar(
-              radius: 42,
-              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-              child: const Icon(Icons.shopping_basket_outlined, size: 42),
+            Container(
+              width: 84,
+              height: 84,
+              decoration: const BoxDecoration(
+                color: CustomerPalette.primaryLight,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.shopping_bag_outlined,
+                color: CustomerPalette.primaryDark,
+                size: 40,
+              ),
             ),
             const SizedBox(height: 18),
             Text(
               'Basket abhi khaali hai',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+              style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 7),
             const Text(
               'Dukaan se apne daily essentials add karein.',
               textAlign: TextAlign.center,
+              style: TextStyle(color: CustomerPalette.textSecondary),
             ),
             const SizedBox(height: 18),
-            FilledButton.icon(
-              onPressed: onBrowse,
-              icon: const Icon(Icons.storefront_rounded),
-              label: const Text('Shop products'),
+            SizedBox(
+              width: 210,
+              child: CustomerPrimaryButton(
+                label: 'Shop products',
+                icon: Icons.storefront_rounded,
+                onPressed: onBrowse,
+              ),
             ),
           ],
         ),

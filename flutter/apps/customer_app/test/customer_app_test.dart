@@ -101,8 +101,11 @@ void main() {
     await tester.tap(continueButton);
     await tester.pumpAndSettle();
 
+    expect(find.text('All stores'), findsOneWidget);
+    expect(find.byKey(const Key('store-code-action')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('store-code-action')));
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('store-code')), findsOneWidget);
-    expect(find.textContaining('Namaste, Riya'), findsOneWidget);
   });
 }
 

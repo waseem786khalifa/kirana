@@ -260,6 +260,11 @@ class CustomerController extends ChangeNotifier {
     required DeliveryAddress address,
     required PaymentChoice payment,
   }) async {
+    if (placingOrder) {
+      throw const CustomerRepositoryException(
+        'Order already place ho raha hai. Thoda wait karein.',
+      );
+    }
     final CustomerProfile? currentProfile = profile;
     final CustomerStore? store = selectedStore;
     if (currentProfile == null || store == null || _cart.isEmpty) {

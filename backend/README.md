@@ -13,7 +13,7 @@ The code is written for PHP 8 and deliberately remains compatible with the insta
    D:\xampp-projects\mysql\bin\mysql.exe -h 127.0.0.1 -P 3306 -u root --default-character-set=utf8mb4 --execute="SOURCE schema.sql"
    ```
 
-   The import is non-destructive and repeatable: it uses `CREATE ... IF NOT EXISTS` and stable `INSERT IGNORE` seed rows. It never drops or truncates data.
+   The import is non-destructive and repeatable: it uses `CREATE ... IF NOT EXISTS`, stable `INSERT IGNORE` demo rows, and a deliberate upsert for the designated bootstrap administrator. It never drops or truncates data.
 
 3. Defaults already match a standard local XAMPP database (`127.0.0.1:3306`, database `kirana_saarthi`, user `root`, empty password). To override them, copy `.env.example` to `.env` and edit the copy. `.env` is ignored by Git.
 4. Point Apache's document root or an Alias at `backend/public`. Ensure `mod_rewrite` and `AllowOverride All` are enabled so `.htaccess` can route requests.
@@ -228,6 +228,32 @@ Resource fields: `id, store_id, customer_id, date, type, amount, order_id, note,
 
 Dates default to the current calendar month in `APP_TIMEZONE`. The result contains `store_id, date_from, date_to, counter_sales, online_sales, total_sales, order_count, delivered_orders, average_order_value, payment_breakdown{cod,upi,pay_at_shop,udhaar}, sales_records[]`.
 
+### Super admin
+
+Import `schema.sql` to create `admin_users`, `admin_tokens`, `admin_login_attempts`, and `admin_audit_logs`. The repeatable seed includes the active `SUPER_ADMIN` account `wasim786khalifa@gmail.com`; only its supplied bcrypt hash is stored, never the plaintext password. Re-importing repairs this designated bootstrap account to the supplied hash and active super-admin role.
+
+- `POST /admin/auth/login` with `{"email":"...","password":"..."}`
+- `GET /admin/auth/me`
+- `POST /admin/auth/logout`
+- `GET /admin/overview`
+- `GET|POST /admin/stores`
+- `PATCH /admin/stores/{id}`
+- `GET /admin/products`
+- `PATCH /admin/products/{id}`
+- `GET /admin/customers`
+- `PATCH /admin/customers/{id}`
+- `GET /admin/delivery-staff`
+- `POST /admin/delivery-staff`
+- `PATCH /admin/delivery-staff/{id}`
+- `POST /admin/delivery-staff/{id}/reset-pin`
+- `GET /admin/orders`
+- `PATCH /admin/orders/{id}/status`
+- `GET /admin/audit-logs`
+
+Except for login, every `/admin/*` endpoint requires `Authorization: Bearer <token>`. Raw admin tokens are returned only once; the database stores their SHA-256 hashes. Admin sessions expire after one hour by default, logout revokes the current session, and repeated invalid attempts temporarily throttle the email-and-source-IP pair without globally locking the account. Configure these limits with `ADMIN_TOKEN_TTL_SECONDS`, `ADMIN_MAX_LOGIN_ATTEMPTS`, and `ADMIN_LOCK_SECONDS`.
+
+List routes accept `limit` and `offset`, return `meta.total`, and support resource-specific filters documented by their query parameter names. Admin writes use strict field allowlists, cannot transfer products or customers between stores, and record before/after details in the audit log. Rider PINs are hashed before storage, resets revoke rider sessions, and a rider with an assigned nonterminal order cannot be deactivated. Admin order updates reuse the same state machine, stock reservation, payment, and tenant checks as the existing order endpoint; super-admin access does not permit arbitrary workflow jumps.
+
 ## Security boundary
 
-This local backend validates payloads, prevents cross-store references, hashes rider credentials, and avoids exposing PINs. It does **not** yet define merchant or customer identity/login endpoints because those were outside the requested API contract. Before an internet deployment, add merchant/customer authentication and require role/tenant authorization on every non-public route; do not treat CORS or a frontend role switch as authentication. Also set `APP_ENV=production`, `APP_DEBUG=false`, a non-root database user/password, HTTPS, rate limiting (especially login), and token revocation/logout.
+This local backend validates payloads, prevents cross-store references, hashes rider and admin credentials, protects super-admin routes with revocable bearer sessions, and avoids exposing PINs or credential hashes. It does **not** yet define merchant or customer identity/login endpoints because those were outside the requested API contract. Before an internet deployment, add merchant/customer authentication and require role/tenant authorization on every non-public route; do not treat CORS or a frontend role switch as authentication. Also set `APP_ENV=production`, `APP_DEBUG=false`, a non-root database user/password, HTTPS, network-level rate limiting, and a secure secret-management/deployment process.

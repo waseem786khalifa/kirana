@@ -9,7 +9,8 @@ function db(): PDO
         return $pdo;
     }
 
-    $config = app_config()['db'];
+    $appConfig = app_config();
+    $config = $appConfig['db'];
     $dsn = sprintf(
         'mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
         $config['host'],
@@ -25,6 +26,9 @@ function db(): PDO
     ));
 
     $pdo->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+    $timezone = new DateTimeZone($appConfig['timezone']);
+    $utcOffset = (new DateTimeImmutable('now', $timezone))->format('P');
+    $pdo->exec('SET time_zone = ' . $pdo->quote($utcOffset));
     return $pdo;
 }
 /**

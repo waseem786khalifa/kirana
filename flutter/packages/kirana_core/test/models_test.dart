@@ -35,11 +35,19 @@ void main() {
           'online_udhaar_enabled': false,
         },
         'allow_nearby_discovery': true,
+        'categories': ['Grocery', 'Snacks'],
+        'product_count': 18,
+        'max_saving': 75,
+        'max_discount_percent': 20,
       });
 
       expect(store.id, 7);
       expect(store.deliverySettings.radiusKm, 4.5);
       expect(store.paymentSettings.upiEnabled, isTrue);
+      expect(store.categories, ['Grocery', 'Snacks']);
+      expect(store.productCount, 18);
+      expect(store.maxSaving, 75);
+      expect(store.maxDiscountPercent, 20);
       expect(store.toJson()['owner_name'], 'Asha');
     });
 

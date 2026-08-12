@@ -15,6 +15,64 @@ $method = request_method();
 $path = request_path();
 
 try {
+    if ($method === 'POST' && $path === '/admin/auth/login') {
+        api_admin_login();
+    }
+    if ($path === '/admin' || strpos($path, '/admin/') === 0) {
+        $admin = require_super_admin();
+        if ($method === 'GET' && $path === '/admin/auth/me') {
+            api_admin_me($admin);
+        }
+        if ($method === 'POST' && $path === '/admin/auth/logout') {
+            api_admin_logout($admin);
+        }
+        if ($method === 'GET' && $path === '/admin/overview') {
+            api_admin_overview($admin);
+        }
+        if ($method === 'GET' && $path === '/admin/stores') {
+            api_admin_list_stores($admin);
+        }
+        if ($method === 'POST' && $path === '/admin/stores') {
+            api_admin_create_store($admin);
+        }
+        if ($method === 'PATCH' && preg_match('#^/admin/stores/([1-9][0-9]*)$#', $path, $matches)) {
+            api_admin_update_store($admin, (int) $matches[1]);
+        }
+        if ($method === 'GET' && $path === '/admin/products') {
+            api_admin_list_products($admin);
+        }
+        if ($method === 'PATCH' && preg_match('#^/admin/products/([1-9][0-9]*)$#', $path, $matches)) {
+            api_admin_update_product($admin, (int) $matches[1]);
+        }
+        if ($method === 'GET' && $path === '/admin/customers') {
+            api_admin_list_customers($admin);
+        }
+        if ($method === 'PATCH' && preg_match('#^/admin/customers/([1-9][0-9]*)$#', $path, $matches)) {
+            api_admin_update_customer($admin, (int) $matches[1]);
+        }
+        if ($method === 'GET' && $path === '/admin/delivery-staff') {
+            api_admin_list_delivery_staff($admin);
+        }
+        if ($method === 'POST' && $path === '/admin/delivery-staff') {
+            api_admin_create_delivery_staff($admin);
+        }
+        if ($method === 'PATCH' && preg_match('#^/admin/delivery-staff/([1-9][0-9]*)$#', $path, $matches)) {
+            api_admin_update_delivery_staff($admin, (int) $matches[1]);
+        }
+        if ($method === 'POST' && preg_match('#^/admin/delivery-staff/([1-9][0-9]*)/reset-pin$#', $path, $matches)) {
+            api_admin_reset_delivery_pin($admin, (int) $matches[1]);
+        }
+        if ($method === 'GET' && $path === '/admin/orders') {
+            api_admin_list_orders($admin);
+        }
+        if ($method === 'PATCH' && preg_match('#^/admin/orders/([1-9][0-9]*)/status$#', $path, $matches)) {
+            api_admin_update_order_status($admin, (int) $matches[1]);
+        }
+        if ($method === 'GET' && $path === '/admin/audit-logs') {
+            api_admin_list_audit_logs($admin);
+        }
+        throw new ApiException(404, 'NOT_FOUND', 'Admin API route not found.');
+    }
     if ($method === 'GET' && $path === '/health') {
         api_health();
     }

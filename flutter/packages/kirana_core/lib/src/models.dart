@@ -89,6 +89,10 @@ class Store {
     this.deliverySettings = const DeliverySettings(),
     this.paymentSettings = const PaymentSettings(),
     this.allowNearbyDiscovery = false,
+    this.categories = const <String>[],
+    this.productCount = 0,
+    this.maxSaving = 0,
+    this.maxDiscountPercent = 0,
   });
 
   final int id;
@@ -109,6 +113,10 @@ class Store {
   final DeliverySettings deliverySettings;
   final PaymentSettings paymentSettings;
   final bool allowNearbyDiscovery;
+  final List<String> categories;
+  final int productCount;
+  final double maxSaving;
+  final int maxDiscountPercent;
 
   factory Store.fromJson(JsonMap json) => Store(
     id: intValue(json['id']),
@@ -137,6 +145,15 @@ class Store {
             jsonMap(json['payment_settings'], context: 'payment_settings'),
           ),
     allowNearbyDiscovery: boolValue(json['allow_nearby_discovery']),
+    categories: json['categories'] is List
+        ? jsonList(json['categories'], context: 'categories')
+              .map(stringValue)
+              .where((String value) => value.trim().isNotEmpty)
+              .toList(growable: false)
+        : const <String>[],
+    productCount: intValue(json['product_count']),
+    maxSaving: doubleValue(json['max_saving']),
+    maxDiscountPercent: intValue(json['max_discount_percent']),
   );
 
   JsonMap toJson() => {
@@ -158,6 +175,10 @@ class Store {
     'delivery_settings': deliverySettings.toJson(),
     'payment_settings': paymentSettings.toJson(),
     'allow_nearby_discovery': allowNearbyDiscovery,
+    'categories': categories,
+    'product_count': productCount,
+    'max_saving': maxSaving,
+    'max_discount_percent': maxDiscountPercent,
   };
 }
 

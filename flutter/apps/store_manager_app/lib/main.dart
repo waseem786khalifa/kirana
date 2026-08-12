@@ -68,6 +68,7 @@ class _ManagerHomeState extends State<ManagerHome> {
   _ManagerTab _tab = _ManagerTab.dashboard;
   bool _loading = true;
   bool _refreshing = false;
+  int _refreshRequestId = 0;
   String? _error;
   String _orderFilter = 'ALL';
 
@@ -113,7 +114,8 @@ class _ManagerHomeState extends State<ManagerHome> {
 
   Future<void> _refresh({bool silent = false}) async {
     final store = _store;
-    if (store == null || _refreshing) return;
+    if (store == null) return;
+    final requestId = ++_refreshRequestId;
     setState(() {
       _refreshing = true;
       if (!silent) _error = null;
@@ -124,7 +126,11 @@ class _ManagerHomeState extends State<ManagerHome> {
         _api.getProducts(storeId: store.id),
         _api.getDeliveryStaff(storeId: store.id),
       ]);
-      if (!mounted) return;
+      if (!mounted ||
+          requestId != _refreshRequestId ||
+          _store?.id != store.id) {
+        return;
+      }
       setState(() {
         _orders = result[0] as List<Order>;
         _products = result[1] as List<Product>;
@@ -132,11 +138,16 @@ class _ManagerHomeState extends State<ManagerHome> {
         _error = null;
       });
     } catch (error) {
-      if (mounted && !silent) {
+      if (mounted &&
+          requestId == _refreshRequestId &&
+          _store?.id == store.id &&
+          !silent) {
         setState(() => _error = _friendlyError(error));
       }
     } finally {
-      if (mounted) setState(() => _refreshing = false);
+      if (mounted && requestId == _refreshRequestId) {
+        setState(() => _refreshing = false);
+      }
     }
   }
 
@@ -633,14 +644,14 @@ class _ManagerHomeState extends State<ManagerHome> {
     }
   }
 
-  Future<void> _updateStatus(
+  Future<bool> _updateStatus(
     Order order,
     String target, {
     int? deliveryStaffId,
     String? rejectionReason,
   }) async {
     final status = _enumStatus(target);
-    if (status == null) return;
+    if (status == null) return false;
     try {
       await _api.updateOrderStatus(
         order.id,
@@ -649,8 +660,10 @@ class _ManagerHomeState extends State<ManagerHome> {
         rejectionReason: rejectionReason,
       );
       await _refresh(silent: true);
+      return true;
     } catch (error) {
       _showError(error);
+      return false;
     }
   }
 
@@ -694,8 +707,14 @@ class _ManagerHomeState extends State<ManagerHome> {
       ),
     );
     if (selected != null) {
-      await _updateStatus(order, 'READY', deliveryStaffId: selected.id);
-      if (mounted) _showMessage('Order ${selected.name} ko assign ho gaya.');
+      final assigned = await _updateStatus(
+        order,
+        'READY',
+        deliveryStaffId: selected.id,
+      );
+      if (assigned && mounted) {
+        _showMessage('Order ${selected.name} ko assign ho gaya.');
+      }
     }
   }
 

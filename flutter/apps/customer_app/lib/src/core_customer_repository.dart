@@ -124,6 +124,16 @@ class CoreCustomerRepository implements CustomerRepository {
           : store.deliverySettings.expectedDeliveryTime,
       codEnabled: store.paymentSettings.codEnabled,
       upiEnabled: store.paymentSettings.upiEnabled,
+      phone: store.phone,
+      logoUrl: store.logo,
+      bannerUrl: store.banner,
+      description: store.description,
+      openingTime: store.openingTime,
+      closingTime: store.closingTime,
+      categories: store.categories,
+      productCount: store.productCount,
+      maxSaving: store.maxSaving,
+      maxDiscountPercent: store.maxDiscountPercent,
     );
   }
 
@@ -180,6 +190,21 @@ class CoreCustomerRepository implements CustomerRepository {
   }
 
   String _message(Object error, String fallback) {
+    if (error is core.ApiException) {
+      if (error.code == 'INVALID_RESPONSE') {
+        return error.statusCode == 404
+            ? 'Customer API endpoint nahi mila. Backend/API URL check karke Retry karein.'
+            : 'Server se valid data nahi mila. Backend check karke Retry karein.';
+      }
+      if (error.code == 'TIMEOUT') {
+        return 'Server response mein zyada time lag raha hai. Dobara Retry karein.';
+      }
+      if (error.isNetworkError) {
+        return 'Server se connection nahi ho paaya. Backend/internet check karke Retry karein.';
+      }
+      if (error.message.trim().isNotEmpty) return error.message;
+      return fallback;
+    }
     final dynamic value = error;
     try {
       final Object? message = value.message;

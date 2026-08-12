@@ -91,6 +91,9 @@ function app_config(): array
         'cors_allowed_origins' => $origins,
         'allow_localhost_any_port' => env_bool('CORS_ALLOW_LOCALHOST_ANY_PORT', true),
         'token_ttl_seconds' => max(300, (int) env_value('AUTH_TOKEN_TTL_SECONDS', 43200)),
+        'admin_token_ttl_seconds' => max(300, (int) env_value('ADMIN_TOKEN_TTL_SECONDS', 3600)),
+        'admin_max_login_attempts' => max(3, (int) env_value('ADMIN_MAX_LOGIN_ATTEMPTS', 5)),
+        'admin_lock_seconds' => max(60, (int) env_value('ADMIN_LOCK_SECONDS', 900)),
         'db' => array(
             'host' => (string) env_value('DB_HOST', '127.0.0.1'),
             'port' => (int) env_value('DB_PORT', 3306),

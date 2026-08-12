@@ -247,6 +247,88 @@ CREATE TABLE IF NOT EXISTS api_tokens (
   CONSTRAINT fk_api_tokens_staff FOREIGN KEY (delivery_staff_id) REFERENCES delivery_staff (id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS admin_users (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  email VARCHAR(254) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  name VARCHAR(160) NOT NULL,
+  role VARCHAR(32) NOT NULL DEFAULT 'SUPER_ADMIN',
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  failed_login_attempts INT UNSIGNED NOT NULL DEFAULT 0,
+  locked_until DATETIME NULL,
+  last_login_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_admin_users_email (email),
+  KEY idx_admin_users_active_role (is_active, role),
+  CONSTRAINT chk_admin_users_role CHECK (role IN ('SUPER_ADMIN'))
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS admin_tokens (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  admin_user_id BIGINT UNSIGNED NOT NULL,
+  token_hash CHAR(64) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  last_used_at DATETIME NULL,
+  revoked_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_admin_tokens_hash (token_hash),
+  KEY idx_admin_tokens_user_expiry (admin_user_id, expires_at),
+  CONSTRAINT fk_admin_tokens_user FOREIGN KEY (admin_user_id) REFERENCES admin_users (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS admin_login_attempts (
+  attempt_key CHAR(64) NOT NULL,
+  email_hash CHAR(64) NOT NULL,
+  ip_address VARCHAR(45) NOT NULL DEFAULT '',
+  failed_attempts INT UNSIGNED NOT NULL DEFAULT 0,
+  locked_until DATETIME NULL,
+  last_failed_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (attempt_key),
+  KEY idx_admin_login_attempts_cleanup (last_failed_at)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  admin_user_id BIGINT UNSIGNED NULL,
+  action VARCHAR(100) NOT NULL,
+  resource_type VARCHAR(80) NOT NULL,
+  resource_id VARCHAR(100) NULL,
+  store_id BIGINT UNSIGNED NULL,
+  request_id VARCHAR(64) NOT NULL,
+  ip_address VARCHAR(45) NOT NULL DEFAULT '',
+  user_agent VARCHAR(500) NOT NULL DEFAULT '',
+  before_json LONGTEXT NULL,
+  after_json LONGTEXT NULL,
+  metadata_json LONGTEXT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_admin_audit_created (created_at, id),
+  KEY idx_admin_audit_actor_created (admin_user_id, created_at),
+  KEY idx_admin_audit_resource (resource_type, resource_id, created_at),
+  KEY idx_admin_audit_store_created (store_id, created_at),
+  CONSTRAINT fk_admin_audit_user FOREIGN KEY (admin_user_id) REFERENCES admin_users (id) ON DELETE SET NULL,
+  CONSTRAINT fk_admin_audit_store FOREIGN KEY (store_id) REFERENCES stores (id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+-- The password itself is never stored in source control; only this supplied bcrypt hash is seeded.
+-- Re-importing deliberately repairs this designated bootstrap account if it was stale or inactive.
+INSERT INTO admin_users (
+  email, password_hash, name, role, is_active
+) VALUES (
+  'wasim786khalifa@gmail.com', '$2y$10$jCrZ8.ZgfJ33RX3n9BdHT.7XTqEi8WY/cv8GuptolRBNfeD7qcrMm', 'Wasim Khalifa', 'SUPER_ADMIN', 1
+) ON DUPLICATE KEY UPDATE
+  password_hash = VALUES(password_hash),
+  name = VALUES(name),
+  role = 'SUPER_ADMIN',
+  is_active = 1,
+  failed_login_attempts = 0,
+  locked_until = NULL;
+
 -- Stable demo stores.
 INSERT IGNORE INTO stores (
   id, code, name, owner_name, phone, address, landmark, pincode, is_open, logo, banner,
@@ -262,14 +344,14 @@ INSERT IGNORE INTO stores (
 INSERT IGNORE INTO products (
   id, store_id, name_en, name_hi, name_mrw, category, pack_size, mrp, selling_price, stock, image, available_for_online, is_hidden
 ) VALUES
-  (1, 1, 'Aashirvaad Shuddh Chakki Atta', 'आशीर्वाद शुद्ध चक्की आटा', 'आशीर्वाद चक्की आटो', 'Atta & Flour', '5 kg', 260.00, 235.00, 39, '', 1, 0),
-  (2, 1, 'Fortune Kachi Ghani Mustard Oil', 'फॉर्च्यून कच्ची घानी सरसों तेल', 'फॉर्च्यून राई रो तेल', 'Cooking Oil', '1 L', 175.00, 152.00, 28, '', 1, 0),
-  (3, 1, 'Amul Pure Cow Ghee Pouch', 'अमूल शुद्ध गाय का घी', 'अमूल गाय रो चोखो घी', 'Ghee', '1 L', 650.00, 610.00, 14, '', 1, 0),
-  (4, 1, 'Tata Tea Gold', 'टाटा टी गोल्ड चाय', 'टाटा गोल्ड चोखी चाय', 'Tea & Coffee', '500 g', 320.00, 240.00, 22, '', 1, 0),
-  (5, 1, 'India Gate Basmati Rice', 'इंडिया गेट बासमती चावल', 'इंडिया गेट बासमती चावल', 'Rice', '5 kg', 550.00, 485.00, 18, '', 1, 0),
-  (6, 1, 'Bikanervala Bikaneri Bhujia', 'बीकानेरी भुजिया नमकीन', 'बीकानेरी भुजिया', 'Snacks', '400 g', 140.00, 125.00, 35, '', 1, 0),
-  (7, 2, 'Fortune Sunlite Refined Oil', 'फॉर्च्यून सनलाइट तेल', 'फॉर्च्यून सनलाइट तेल', 'Cooking Oil', '1 L', 155.00, 142.00, 40, '', 1, 0),
-  (8, 3, 'Tata Salt', 'टाटा नमक', 'टाटा लूण', 'Staples', '1 kg', 30.00, 28.00, 50, '', 1, 0);
+  (1, 1, 'Aashirvaad Shuddh Chakki Atta', 'à¤†à¤¶à¥€à¤°à¥à¤µà¤¾à¤¦ à¤¶à¥à¤¦à¥à¤§ à¤šà¤•à¥à¤•à¥€ à¤†à¤Ÿà¤¾', 'à¤†à¤¶à¥€à¤°à¥à¤µà¤¾à¤¦ à¤šà¤•à¥à¤•à¥€ à¤†à¤Ÿà¥‹', 'Atta & Flour', '5 kg', 260.00, 235.00, 39, '', 1, 0),
+  (2, 1, 'Fortune Kachi Ghani Mustard Oil', 'à¤«à¥‰à¤°à¥à¤šà¥à¤¯à¥‚à¤¨ à¤•à¤šà¥à¤šà¥€ à¤˜à¤¾à¤¨à¥€ à¤¸à¤°à¤¸à¥‹à¤‚ à¤¤à¥‡à¤²', 'à¤«à¥‰à¤°à¥à¤šà¥à¤¯à¥‚à¤¨ à¤°à¤¾à¤ˆ à¤°à¥‹ à¤¤à¥‡à¤²', 'Cooking Oil', '1 L', 175.00, 152.00, 28, '', 1, 0),
+  (3, 1, 'Amul Pure Cow Ghee Pouch', 'à¤…à¤®à¥‚à¤² à¤¶à¥à¤¦à¥à¤§ à¤—à¤¾à¤¯ à¤•à¤¾ à¤˜à¥€', 'à¤…à¤®à¥‚à¤² à¤—à¤¾à¤¯ à¤°à¥‹ à¤šà¥‹à¤–à¥‹ à¤˜à¥€', 'Ghee', '1 L', 650.00, 610.00, 14, '', 1, 0),
+  (4, 1, 'Tata Tea Gold', 'à¤Ÿà¤¾à¤Ÿà¤¾ à¤Ÿà¥€ à¤—à¥‹à¤²à¥à¤¡ à¤šà¤¾à¤¯', 'à¤Ÿà¤¾à¤Ÿà¤¾ à¤—à¥‹à¤²à¥à¤¡ à¤šà¥‹à¤–à¥€ à¤šà¤¾à¤¯', 'Tea & Coffee', '500 g', 320.00, 240.00, 22, '', 1, 0),
+  (5, 1, 'India Gate Basmati Rice', 'à¤‡à¤‚à¤¡à¤¿à¤¯à¤¾ à¤—à¥‡à¤Ÿ à¤¬à¤¾à¤¸à¤®à¤¤à¥€ à¤šà¤¾à¤µà¤²', 'à¤‡à¤‚à¤¡à¤¿à¤¯à¤¾ à¤—à¥‡à¤Ÿ à¤¬à¤¾à¤¸à¤®à¤¤à¥€ à¤šà¤¾à¤µà¤²', 'Rice', '5 kg', 550.00, 485.00, 18, '', 1, 0),
+  (6, 1, 'Bikanervala Bikaneri Bhujia', 'à¤¬à¥€à¤•à¤¾à¤¨à¥‡à¤°à¥€ à¤­à¥à¤œà¤¿à¤¯à¤¾ à¤¨à¤®à¤•à¥€à¤¨', 'à¤¬à¥€à¤•à¤¾à¤¨à¥‡à¤°à¥€ à¤­à¥à¤œà¤¿à¤¯à¤¾', 'Snacks', '400 g', 140.00, 125.00, 35, '', 1, 0),
+  (7, 2, 'Fortune Sunlite Refined Oil', 'à¤«à¥‰à¤°à¥à¤šà¥à¤¯à¥‚à¤¨ à¤¸à¤¨à¤²à¤¾à¤‡à¤Ÿ à¤¤à¥‡à¤²', 'à¤«à¥‰à¤°à¥à¤šà¥à¤¯à¥‚à¤¨ à¤¸à¤¨à¤²à¤¾à¤‡à¤Ÿ à¤¤à¥‡à¤²', 'Cooking Oil', '1 L', 155.00, 142.00, 40, '', 1, 0),
+  (8, 3, 'Tata Salt', 'à¤Ÿà¤¾à¤Ÿà¤¾ à¤¨à¤®à¤•', 'à¤Ÿà¤¾à¤Ÿà¤¾ à¤²à¥‚à¤£', 'Staples', '1 kg', 30.00, 28.00, 50, '', 1, 0);
 
 INSERT IGNORE INTO customers (
   id, store_id, name, mobile, allow_online_udhaar, udhaar_balance, total_orders, total_spent, last_order_date
@@ -305,12 +387,12 @@ INSERT IGNORE INTO orders (
 INSERT IGNORE INTO order_items (
   id, order_id, product_id, name_en, name_hi, name_mrw, pack_size, price, mrp, quantity
 ) VALUES
-  (1, 1, 1, 'Aashirvaad Shuddh Chakki Atta', 'आशीर्वाद शुद्ध चक्की आटा', 'आशीर्वाद चक्की आटो', '5 kg', 235.00, 260.00, 1),
-  (2, 1, 2, 'Fortune Kachi Ghani Mustard Oil', 'फॉर्च्यून कच्ची घानी सरसों तेल', 'फॉर्च्यून राई रो तेल', '1 L', 152.00, 175.00, 2),
-  (3, 2, 3, 'Amul Pure Cow Ghee Pouch', 'अमूल शुद्ध गाय का घी', 'अमूल गाय रो चोखो घी', '1 L', 610.00, 650.00, 1),
-  (4, 2, 4, 'Tata Tea Gold', 'टाटा टी गोल्ड चाय', 'टाटा गोल्ड चोखी चाय', '500 g', 240.00, 320.00, 1),
-  (5, 3, 5, 'India Gate Basmati Rice', 'इंडिया गेट बासमती चावल', 'इंडिया गेट बासमती चावल', '5 kg', 485.00, 550.00, 1),
-  (6, 3, 6, 'Bikanervala Bikaneri Bhujia', 'बीकानेरी भुजिया नमकीन', 'बीकानेरी भुजिया', '400 g', 125.00, 140.00, 2);
+  (1, 1, 1, 'Aashirvaad Shuddh Chakki Atta', 'à¤†à¤¶à¥€à¤°à¥à¤µà¤¾à¤¦ à¤¶à¥à¤¦à¥à¤§ à¤šà¤•à¥à¤•à¥€ à¤†à¤Ÿà¤¾', 'à¤†à¤¶à¥€à¤°à¥à¤µà¤¾à¤¦ à¤šà¤•à¥à¤•à¥€ à¤†à¤Ÿà¥‹', '5 kg', 235.00, 260.00, 1),
+  (2, 1, 2, 'Fortune Kachi Ghani Mustard Oil', 'à¤«à¥‰à¤°à¥à¤šà¥à¤¯à¥‚à¤¨ à¤•à¤šà¥à¤šà¥€ à¤˜à¤¾à¤¨à¥€ à¤¸à¤°à¤¸à¥‹à¤‚ à¤¤à¥‡à¤²', 'à¤«à¥‰à¤°à¥à¤šà¥à¤¯à¥‚à¤¨ à¤°à¤¾à¤ˆ à¤°à¥‹ à¤¤à¥‡à¤²', '1 L', 152.00, 175.00, 2),
+  (3, 2, 3, 'Amul Pure Cow Ghee Pouch', 'à¤…à¤®à¥‚à¤² à¤¶à¥à¤¦à¥à¤§ à¤—à¤¾à¤¯ à¤•à¤¾ à¤˜à¥€', 'à¤…à¤®à¥‚à¤² à¤—à¤¾à¤¯ à¤°à¥‹ à¤šà¥‹à¤–à¥‹ à¤˜à¥€', '1 L', 610.00, 650.00, 1),
+  (4, 2, 4, 'Tata Tea Gold', 'à¤Ÿà¤¾à¤Ÿà¤¾ à¤Ÿà¥€ à¤—à¥‹à¤²à¥à¤¡ à¤šà¤¾à¤¯', 'à¤Ÿà¤¾à¤Ÿà¤¾ à¤—à¥‹à¤²à¥à¤¡ à¤šà¥‹à¤–à¥€ à¤šà¤¾à¤¯', '500 g', 240.00, 320.00, 1),
+  (5, 3, 5, 'India Gate Basmati Rice', 'à¤‡à¤‚à¤¡à¤¿à¤¯à¤¾ à¤—à¥‡à¤Ÿ à¤¬à¤¾à¤¸à¤®à¤¤à¥€ à¤šà¤¾à¤µà¤²', 'à¤‡à¤‚à¤¡à¤¿à¤¯à¤¾ à¤—à¥‡à¤Ÿ à¤¬à¤¾à¤¸à¤®à¤¤à¥€ à¤šà¤¾à¤µà¤²', '5 kg', 485.00, 550.00, 1),
+  (6, 3, 6, 'Bikanervala Bikaneri Bhujia', 'à¤¬à¥€à¤•à¤¾à¤¨à¥‡à¤°à¥€ à¤­à¥à¤œà¤¿à¤¯à¤¾ à¤¨à¤®à¤•à¥€à¤¨', 'à¤¬à¥€à¤•à¤¾à¤¨à¥‡à¤°à¥€ à¤­à¥à¤œà¤¿à¤¯à¤¾', '400 g', 125.00, 140.00, 2);
 
 INSERT IGNORE INTO order_status_history (id, order_id, from_status, to_status, delivery_staff_id, note, created_at) VALUES
   (1, 1, NULL, 'NEW', NULL, 'Seeded order', '2026-08-08 09:15:00'),
